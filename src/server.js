@@ -7,7 +7,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // IMPORTANTE: Cargar variables de entorno ANTES de cualquier otro import
-dotenv.config({ path: join(__dirname, '..', '.env') });
+// Solo en desarrollo (si existe el archivo .env)
+if (process.env.NODE_ENV !== 'production') {
+  dotenv.config({ path: join(__dirname, '..', '.env') });
+}
 
 import express from 'express';
 import cors from 'cors';
@@ -17,6 +20,9 @@ import lyricsRoutes from './routes/lyrics.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// IMPORTANTE: Trust proxy para Railway
+app.set('trust proxy', 1);
 
 // Middleware
 app.use(cors());
@@ -31,6 +37,10 @@ const apiLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req, res) => {
+    // Skip rate limiting para health checks
+    return req.path === '/health';
+  }
 });
 
 // Rate limiting específico para búsquedas (más estricto)
@@ -42,20 +52,32 @@ const searchLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req, res) => {
+    return req.path === '/health';
+  }
 });
 
 // Aplicar rate limiting general a todas las rutas API
 app.use('/api/', apiLimiter);
 
-// Routes
-app.use('/api/youtube', youtubeRoutes);
-app.use('/api/lyrics', lyricsRoutes);
-
 // Health check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', message: 'Server is running' });
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', port: PORT });
 });
 
+// Routes
+app.use('/api/youtube', searchLimiter, youtubeRoutes);
+app.use('/api/lyrics', searchLimiter, lyricsRoutes);
+
+// Error handling
+app.use((err, req, res, next) => {
+  console.error('Error:', err);
+  res.status(500).json({ error: err.message });
+});
+
+// Start server
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`YouTube API Key configured: ${process.env.YOUTUBE_API_KEY ? '✅' : '❌'}`);
 });
