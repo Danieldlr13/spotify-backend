@@ -20,28 +20,75 @@ axiosRetry(axios, {
   }
 });
 
-// Sistema de caché LRU (previene memory leaks)
+// Configurar LRU cache
 const cache = new LRUCache({
-  max: 500, // Máximo 500 entradas en caché
-  ttl: 1000 * 60 * 60, // TTL de 1 hora
-  updateAgeOnGet: true, // Actualizar edad al acceder (LRU)
-  allowStale: false // No devolver datos obsoletos
+  max: 500, // Máximo 500 entradas
+  ttl: 1000 * 60 * 30, // 30 minutos TTL
+  updateAgeOnGet: true
 });
 
-// Función helper para obtener la API key actual
 const getCurrentApiKey = () => {
-  return getApiKeyManager().getCurrentKey();
+  const key = getApiKeyManager().getCurrentKey();
+  const info = getApiKeyManager().getCurrentKeyInfo();
+  console.log(`🔑 Usando API Key #${info.index}/${info.total}`);
+  return key;
 };
 
-// Función helper para manejar errores de API
+// Función helper para manejar errores de API (log + delegar)
 const handleApiError = (error) => {
-  getApiKeyManager().handleApiError(error);
+  const keyManager = getApiKeyManager();
+  console.log('❌ Error de API detectado:', {
+    status: error.response?.status,
+    code: error.response?.data?.error?.code,
+    message: error.response?.data?.error?.message || error.message
+  });
+
+  keyManager.handleApiError(error);
+  // Re-lanzar para que el caller pueda decidir
   throw error;
 };
 
 // Función helper para marcar request exitoso
 const markRequestSuccess = () => {
   getApiKeyManager().resetCurrentKeyErrors();
+};
+
+// Función para hacer peticiones con rotación automática de keys
+const makeApiRequestWithKeyRotation = async (url, params = {}, maxRetries = 3) => {
+  let lastError = null;
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const apiKey = getCurrentApiKey();
+      const response = await axios.get(url, { params: { ...params, key: apiKey } });
+      markRequestSuccess();
+      return response;
+    } catch (error) {
+      lastError = error;
+      const statusCode = error.response?.status;
+
+      // Si es error de cuota/rate limit, rotar y reintentar
+      if (statusCode === 429 || statusCode === 403) {
+        console.log(`⚠️  Error ${statusCode} detectado, rotando key... (intento ${attempt + 1}/${maxRetries})`);
+        try {
+          handleApiError(error);
+        } catch (e) {
+          // handleApiError re-lanza; continuar para intentar con nueva key
+        }
+
+        if (attempt < maxRetries - 1) {
+          // short backoff
+          await new Promise(r => setTimeout(r, 1000));
+          continue;
+        }
+      }
+
+      // No es error de cuota o no quedan reintentos
+      throw error;
+    }
+  }
+
+  throw lastError;
 };
 
 // Función helper para obtener/guardar en caché
@@ -75,19 +122,13 @@ export const searchVideos = async (req, res) => {
     const cacheKey = `search:${q}:${maxResults}:${type}`;
     
     const result = await getCachedOrFetch(cacheKey, async () => {
-      const apiKey = getCurrentApiKey();
-      
-      const response = await axios.get(`${YOUTUBE_API_BASE}/search`, {
-        params: {
-          part: 'snippet',
-          q: q,
-          type: type,
-          maxResults: maxResults,
-          videoCategoryId: '10', // Música
-          key: apiKey
-        }
-      }).catch(error => {
-        handleApiError(error);
+      // Usar función que rota keys automáticamente en caso de 429/403
+      const response = await makeApiRequestWithKeyRotation(`${YOUTUBE_API_BASE}/search`, {
+        part: 'snippet',
+        q: q,
+        type: type,
+        maxResults: maxResults,
+        videoCategoryId: '10'
       });
 
       // Obtener IDs de videos
@@ -99,14 +140,9 @@ export const searchVideos = async (req, res) => {
       // Obtener detalles adicionales (duración, estadísticas)
       let detailedItems = response.data.items;
       if (videoIds) {
-        const detailsResponse = await axios.get(`${YOUTUBE_API_BASE}/videos`, {
-          params: {
-            part: 'contentDetails,statistics',
-            id: videoIds,
-            key: apiKey
-          }
-        }).catch(error => {
-          handleApiError(error);
+        const detailsResponse = await makeApiRequestWithKeyRotation(`${YOUTUBE_API_BASE}/videos`, {
+          part: 'contentDetails,statistics',
+          id: videoIds
         });
 
         // Combinar datos
@@ -123,7 +159,7 @@ export const searchVideos = async (req, res) => {
       }
 
       markRequestSuccess();
-      
+
       return {
         items: detailedItems,
         pageInfo: response.data.pageInfo
@@ -170,14 +206,9 @@ export const getVideoDetails = async (req, res) => {
     const result = await getCachedOrFetch(cacheKey, async () => {
       const apiKey = getCurrentApiKey();
       
-      const response = await axios.get(`${YOUTUBE_API_BASE}/videos`, {
-        params: {
-          part: 'snippet,contentDetails,statistics',
-          id: videoId,
-          key: apiKey
-        }
-      }).catch(error => {
-        handleApiError(error);
+      const response = await makeApiRequestWithKeyRotation(`${YOUTUBE_API_BASE}/videos`, {
+        part: 'snippet,contentDetails,statistics',
+        id: videoId
       });
 
       if (response.data.items.length === 0) {
@@ -214,16 +245,11 @@ export const getRelatedVideos = async (req, res) => {
     const result = await getCachedOrFetch(cacheKey, async () => {
       const apiKey = getCurrentApiKey();
       
-      const response = await axios.get(`${YOUTUBE_API_BASE}/search`, {
-        params: {
-          part: 'snippet',
-          relatedToVideoId: videoId,
-          type: 'video',
-          maxResults: maxResults,
-          key: apiKey
-        }
-      }).catch(error => {
-        handleApiError(error);
+      const response = await makeApiRequestWithKeyRotation(`${YOUTUBE_API_BASE}/search`, {
+        part: 'snippet',
+        relatedToVideoId: videoId,
+        type: 'video',
+        maxResults: maxResults
       });
 
       markRequestSuccess();
@@ -251,15 +277,10 @@ export const getPlaylistItems = async (req, res) => {
     const result = await getCachedOrFetch(cacheKey, async () => {
       const apiKey = getCurrentApiKey();
       
-      const response = await axios.get(`${YOUTUBE_API_BASE}/playlistItems`, {
-        params: {
-          part: 'snippet,contentDetails',
-          playlistId: playlistId,
-          maxResults: maxResults,
-          key: apiKey
-        }
-      }).catch(error => {
-        handleApiError(error);
+      const response = await makeApiRequestWithKeyRotation(`${YOUTUBE_API_BASE}/playlistItems`, {
+        part: 'snippet,contentDetails',
+        playlistId: playlistId,
+        maxResults: maxResults
       });
 
       markRequestSuccess();
@@ -311,15 +332,10 @@ export const searchChannels = async (req, res) => {
       // Obtener detalles adicionales (estadísticas, branding)
       let detailedItems = response.data.items;
       if (channelIds) {
-        const detailsResponse = await axios.get(`${YOUTUBE_API_BASE}/channels`, {
-          params: {
+          const detailsResponse = await makeApiRequestWithKeyRotation(`${YOUTUBE_API_BASE}/channels`, {
             part: 'statistics,brandingSettings',
-            id: channelIds,
-            key: apiKey
-          }
-        }).catch(error => {
-          handleApiError(error);
-        });
+            id: channelIds
+          });
 
         // Combinar datos
         detailedItems = response.data.items.map(item => {

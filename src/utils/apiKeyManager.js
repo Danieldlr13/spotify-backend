@@ -181,12 +181,16 @@ class ApiKeyManager {
   isQuotaError(error) {
     const errorMessage = error.response?.data?.error?.message || error.message || '';
     const errorCode = error.response?.data?.error?.code;
-    
+    const statusCode = error.response?.status;
+
     return (
       errorCode === 403 ||
+      statusCode === 403 ||
+      statusCode === 429 || // Too Many Requests
       errorMessage.toLowerCase().includes('quota') ||
       errorMessage.toLowerCase().includes('exceeded') ||
-      errorMessage.toLowerCase().includes('limit')
+      errorMessage.toLowerCase().includes('limit') ||
+      errorMessage.toLowerCase().includes('rate')
     );
   }
 
