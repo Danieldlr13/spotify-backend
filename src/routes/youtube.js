@@ -15,10 +15,10 @@ import {
 
 const router = express.Router();
 
-// Rate limiter específico para búsquedas (más estricto)
+// Rate limiter específico para búsquedas (aumentado para permitir carga inicial)
 const searchLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minuto
-  max: 20, // 20 búsquedas por minuto por IP
+  max: 100, // 100 búsquedas por minuto por IP (suficiente para carga inicial + navegación)
   message: {
     error: 'Demasiadas búsquedas, espera un momento',
     retryAfter: '1 minuto'
