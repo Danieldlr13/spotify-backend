@@ -261,8 +261,39 @@ export const getRelatedVideos = async (req, res) => {
         maxResults: maxResults
       });
 
+      // Obtener IDs de videos relacionados
+      const videoIds = response.data.items
+        .map(item => item.id.videoId)
+        .filter(Boolean)
+        .join(',');
+
+      // Obtener detalles adicionales (duración, estadísticas) igual que en searchVideos
+      let detailedItems = response.data.items;
+      if (videoIds) {
+        const detailsResponse = await makeApiRequestWithKeyRotation(`${YOUTUBE_API_BASE}/videos`, {
+          part: 'contentDetails,statistics',
+          id: videoIds
+        });
+
+        // Combinar datos
+        detailedItems = response.data.items.map(item => {
+          const details = detailsResponse.data.items.find(
+            d => d.id === item.id.videoId
+          );
+          return {
+            ...item,
+            contentDetails: details?.contentDetails,
+            statistics: details?.statistics
+          };
+        });
+      }
+
       markRequestSuccess();
-      return response.data;
+      
+      return {
+        items: detailedItems,
+        pageInfo: response.data.pageInfo
+      };
     });
 
     res.json(result);
