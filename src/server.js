@@ -46,7 +46,7 @@ const apiLimiter = rateLimit({
 // Rate limiting específico para búsquedas (más estricto)
 const searchLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minuto
-  max: 20, // 20 búsquedas por minuto
+  max: 100, // 100 búsquedas por minuto (permitir carga inicial frontend)
   message: {
     error: 'Demasiadas búsquedas, espera un momento'
   },
