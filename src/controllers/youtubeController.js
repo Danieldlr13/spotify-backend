@@ -240,6 +240,15 @@ export const getRelatedVideos = async (req, res) => {
     const { videoId } = req.params;
     const { maxResults = 10 } = req.query;
 
+    // Validar que videoId no esté vacío y tenga formato válido de YouTube
+    if (!videoId || videoId === 'undefined' || videoId === 'null' || videoId.length < 5) {
+      console.error('❌ Invalid videoId:', videoId);
+      return res.status(400).json({ 
+        error: 'Invalid video ID',
+        details: 'Video ID is required and must be valid'
+      });
+    }
+
     const cacheKey = `related:${videoId}:${maxResults}`;
     
     const result = await getCachedOrFetch(cacheKey, async () => {
@@ -259,6 +268,13 @@ export const getRelatedVideos = async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error('Error getting related videos:', error.response?.data || error.message);
+    
+    // Si es un error 400 de YouTube (invalid argument), retornar array vacío en lugar de error
+    if (error.response?.data?.error?.code === 400) {
+      console.warn('⚠️ YouTube API rejected videoId:', req.params.videoId, '- Returning empty results');
+      return res.json({ items: [], pageInfo: { totalResults: 0 } });
+    }
+    
     res.status(500).json({ 
       error: 'Error getting related videos',
       details: error.response?.data?.error?.message || error.message
