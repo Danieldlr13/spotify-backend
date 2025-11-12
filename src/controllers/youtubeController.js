@@ -309,18 +309,11 @@ export const searchChannels = async (req, res) => {
     const cacheKey = `channels:search:${q}:${maxResults}`;
     
     const result = await getCachedOrFetch(cacheKey, async () => {
-      const apiKey = getCurrentApiKey();
-      
-      const response = await axios.get(`${YOUTUBE_API_BASE}/search`, {
-        params: {
-          part: 'snippet',
-          q: q,
-          type: 'channel',
-          maxResults: maxResults,
-          key: apiKey
-        }
-      }).catch(error => {
-        handleApiError(error);
+      const response = await makeApiRequestWithKeyRotation(`${YOUTUBE_API_BASE}/search`, {
+        part: 'snippet',
+        q: q,
+        type: 'channel',
+        maxResults: maxResults
       });
 
       // Obtener IDs de canales
@@ -376,16 +369,9 @@ export const getChannelDetails = async (req, res) => {
     const cacheKey = `channel:${channelId}`;
     
     const result = await getCachedOrFetch(cacheKey, async () => {
-      const apiKey = getCurrentApiKey();
-      
-      const response = await axios.get(`${YOUTUBE_API_BASE}/channels`, {
-        params: {
-          part: 'snippet,contentDetails,statistics,brandingSettings',
-          id: channelId,
-          key: apiKey
-        }
-      }).catch(error => {
-        handleApiError(error);
+      const response = await makeApiRequestWithKeyRotation(`${YOUTUBE_API_BASE}/channels`, {
+        part: 'snippet,contentDetails,statistics,brandingSettings',
+        id: channelId
       });
 
       if (response.data.items.length === 0) {
@@ -420,19 +406,12 @@ export const getChannelVideos = async (req, res) => {
     const cacheKey = `channel:${channelId}:videos:${maxResults}`;
     
     const result = await getCachedOrFetch(cacheKey, async () => {
-      const apiKey = getCurrentApiKey();
-      
-      const response = await axios.get(`${YOUTUBE_API_BASE}/search`, {
-        params: {
-          part: 'snippet',
-          channelId: channelId,
-          type: 'video',
-          order: 'date',
-          maxResults: maxResults,
-          key: apiKey
-        }
-      }).catch(error => {
-        handleApiError(error);
+      const response = await makeApiRequestWithKeyRotation(`${YOUTUBE_API_BASE}/search`, {
+        part: 'snippet',
+        channelId: channelId,
+        type: 'video',
+        order: 'date',
+        maxResults: maxResults
       });
 
       // Obtener IDs de videos
@@ -444,14 +423,9 @@ export const getChannelVideos = async (req, res) => {
       // Obtener detalles adicionales
       let detailedItems = response.data.items;
       if (videoIds) {
-        const detailsResponse = await axios.get(`${YOUTUBE_API_BASE}/videos`, {
-          params: {
-            part: 'contentDetails,statistics',
-            id: videoIds,
-            key: apiKey
-          }
-        }).catch(error => {
-          handleApiError(error);
+        const detailsResponse = await makeApiRequestWithKeyRotation(`${YOUTUBE_API_BASE}/videos`, {
+          part: 'contentDetails,statistics',
+          id: videoIds
         });
 
         detailedItems = response.data.items.map(item => {
