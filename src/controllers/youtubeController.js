@@ -122,14 +122,19 @@ export const searchVideos = async (req, res) => {
     const cacheKey = `search:${q}:${maxResults}:${type}`;
     
     const result = await getCachedOrFetch(cacheKey, async () => {
-      // Usar función que rota keys automáticamente en caso de 429/403
-      const response = await makeApiRequestWithKeyRotation(`${YOUTUBE_API_BASE}/search`, {
+      const params = {
         part: 'snippet',
         q: q,
-        type: 'video,channel', // Incluir canales en la búsqueda
-        maxResults: maxResults,
-        videoCategoryId: '10'
-      });
+        type: type,
+        maxResults: maxResults
+      };
+
+      // Incluir videoCategoryId solo si el tipo de búsqueda es video
+      if (type.includes('video')) {
+        params.videoCategoryId = '10';
+      }
+
+      const response = await makeApiRequestWithKeyRotation(`${YOUTUBE_API_BASE}/search`, params);
 
       // Obtener IDs de videos
       const videoIds = response.data.items
