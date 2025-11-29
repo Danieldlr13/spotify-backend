@@ -126,18 +126,19 @@ export const searchVideos = async (req, res) => {
       const response = await makeApiRequestWithKeyRotation(`${YOUTUBE_API_BASE}/search`, {
         part: 'snippet',
         q: q,
-        type: type,
+        type: 'video,channel', // Incluir canales en la búsqueda
         maxResults: maxResults,
         videoCategoryId: '10'
       });
 
       // Obtener IDs de videos
       const videoIds = response.data.items
+        .filter(item => item.id.kind === 'youtube#video')
         .map(item => item.id.videoId)
         .filter(Boolean)
         .join(',');
 
-      // Obtener detalles adicionales (duración, estadísticas)
+      // Obtener detalles adicionales (duración, estadísticas) para videos
       let detailedItems = response.data.items;
       if (videoIds) {
         const detailsResponse = await makeApiRequestWithKeyRotation(`${YOUTUBE_API_BASE}/videos`, {
@@ -147,14 +148,17 @@ export const searchVideos = async (req, res) => {
 
         // Combinar datos
         detailedItems = response.data.items.map(item => {
-          const details = detailsResponse.data.items.find(
-            d => d.id === item.id.videoId
-          );
-          return {
-            ...item,
-            contentDetails: details?.contentDetails,
-            statistics: details?.statistics
-          };
+          if (item.id.kind === 'youtube#video') {
+            const details = detailsResponse.data.items.find(
+              d => d.id === item.id.videoId
+            );
+            return {
+              ...item,
+              contentDetails: details?.contentDetails,
+              statistics: details?.statistics
+            };
+          }
+          return item; // Devolver canales sin cambios
         });
       }
 
