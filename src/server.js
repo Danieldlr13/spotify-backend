@@ -28,32 +28,33 @@ app.set('trust proxy', 1);
 app.use(cors());
 app.use(express.json());
 
-// Rate limiting - Protección general de API
+// Rate limiting - Protección general de API (más permisivo)
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 100, // 100 requests por IP cada 15 minutos
+  max: 500, // 500 requests por IP cada 15 minutos
   message: {
     error: 'Demasiadas solicitudes desde esta IP, intenta más tarde'
   },
   standardHeaders: true,
   legacyHeaders: false,
   skip: (req, res) => {
-    // Skip rate limiting para health checks
-    return req.path === '/health';
+    // Skip rate limiting para health checks y gestión de API keys
+    return req.path === '/health' || req.path.includes('/keys/');
   }
 });
 
-// Rate limiting específico para búsquedas (más estricto)
+// Rate limiting específico para búsquedas
 const searchLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minuto
-  max: 20, // 20 búsquedas por minuto
+  max: 60, // 60 búsquedas por minuto
   message: {
     error: 'Demasiadas búsquedas, espera un momento'
   },
   standardHeaders: true,
   legacyHeaders: false,
   skip: (req, res) => {
-    return req.path === '/health';
+    // Skip para health checks y gestión de API keys
+    return req.path === '/health' || req.path.includes('/keys/');
   }
 });
 
